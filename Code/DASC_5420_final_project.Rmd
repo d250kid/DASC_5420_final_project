@@ -1,0 +1,358 @@
+---
+title: "DASC_5420_final_project"
+author: "Melvin_Biju_T00706241"
+date: "2023-04-15"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#loading required libraries
+library(ggplot2)
+library(reshape2)
+library(dplyr)
+library(forecast)
+
+```
+
+
+
+```{r}
+auto_df_raw <- read.csv("https://archive.ics.uci.edu/ml/machine-learning-databases/autos/imports-85.data", header  = FALSE, col.names=c('symboling', 'normalized.losses','make',
+                         'fuel.type','aspiration','num.of.doors',
+                         'body.style','drive.wheels','engine.location',
+                         'wheel.base','length','width','height','curb.weight',
+                         'engine.type','num.of.cylinders','engine.size',
+                         'fuel.system','bore','stroke','compression.ratio',
+                         'horsepower','peak.rpm','city.mpg','highway.mpg',
+                         'price'))
+
+head(auto_df_raw)
+```
+**EDA of the raw Data**
+
+*1. Checking for null values*
+```{r}
+colSums(is.na(auto_df_raw))
+```
+
+We see no missing values. However on closer inspection, we find that there are a lot of "?" values in several columns. We find that this is causing columns with numeric values to be considered as factor. So we replace the "?" with null values and change the datatype for accurate analysis.
+
+
+```{r}
+glimpse(auto_df_raw)
+```
+
+
+Now we can see that, there are NA values in 7 columns. 
+
+```{r}
+auto_df_raw[auto_df_raw == '?'] <- NA
+colSums(is.na(auto_df_raw))
+auto_df_raw$normalized.losses <- as.numeric(auto_df_raw$normalized.losses)
+glimpse(auto_df_raw)
+```
+
+
+**Removing Outliers**
+
+Initially, we have 41 outliers for normalized.losses. Since this is a signififcant number, we use the mean to fill the NA values. After that, we can see that there is a maximum of 4 outliers in a column. Since this is a small number, we can omit observations that has NA values in it.
+
+
+```{r}
+
+# calculate the mean
+mean_normalized_losses <- mean(auto_df_raw$normalized.losses, na.rm = TRUE)
+
+# replace missing values with the mean
+auto_df_raw$normalized.losses <- ifelse(is.na(auto_df_raw$normalized.losse), mean_normalized_losses, auto_df_raw$normalized.losses)
+
+# remove rows with NA values
+auto_df_V1 <- auto_df_raw[complete.cases(auto_df_raw),]
+colSums(is.na(auto_df_V1))
+glimpse(auto_df_V1)
+```
+
+
+We notice that the datatypes for the continuous variables are not correct, (e.g Price is of class character) hence we typecast all variables to the correct datatype.
+
+
+```{r}
+
+cols_as_factors = c('make','fuel.type','aspiration','num.of.doors', 'body.style','drive.wheels','engine.location','engine.type','num.of.cylinders','fuel.system')
+
+cols_as_int =c('horsepower','peak.rpm','city.mpg','highway.mpg','price','curb.weight','engine.size')
+cols_as_numeric = c('bore','stroke','compression.ratio','wheel.base','length','width','height')
+
+auto_df_V2 = auto_df_V1 %>% mutate_at(cols_as_factors, factor) %>% 
+  mutate_at(cols_as_int, as.integer) %>% mutate_at(cols_as_numeric, as.numeric)
+
+glimpse(auto_df_V2)
+
+```
+
+**Removing outliers**
+
+
+```{r}
+
+# Select only the numerical variables in the dataset
+num_vars <- auto_df_V2[, sapply(auto_df_V2, is.numeric)]
+
+# Scale the numerical variables using the scale() function
+scaled_vars <- as.data.frame(scale(num_vars))
+
+# Combine the scaled variables with the non-numerical variables
+non_num_vars <- auto_df_V2[, !sapply(auto_df_V2, is.numeric)]
+scaled_data <- cbind(non_num_vars, scaled_vars)
+
+# Plot boxplots of all numerical variables in the dataset
+boxplot(scaled_data[, sapply(scaled_data, is.numeric)], 
+        main = "Boxplot of Numerical Variables in Automobile Dataset",
+        xlab = "Variables",
+        ylab = "Values")
+
+```
+
+```{r}
+# Select only the numerical variables in the dataset
+num_vars <- auto_df_V2[, sapply(auto_df_V2, is.numeric)]
+# Calculate the lower and upper bounds of the IQR for each numerical variable
+bounds <- apply(num_vars, 2, function(x) {
+  q1 <- quantile(x, 0.25)
+  q3 <- quantile(x, 0.75)
+  iqr <- q3 - q1
+  lower <- q1 - 1.5 * iqr
+  upper <- q3 + 1.5 * iqr
+  c(lower, upper)
+})
+
+# Filter the dataset to exclude any values that fall outside the IQR bounds
+auto_df_clean <- auto_df_V2
+for (col in names(num_vars)) {
+  auto_df_clean <- auto_df_clean[!(auto_df_clean[[col]] < bounds[1, col] | auto_df_clean[[col]] > bounds[2, col]),]
+}
+```
+
+```{r}
+# Select only the numerical variables in the dataset
+num_vars <- auto_df_clean[, sapply(auto_df_clean, is.numeric)]
+
+# Scale the numerical variables using the scale() function
+scaled_vars <- as.data.frame(scale(num_vars))
+
+# Combine the scaled variables with the non-numerical variables
+non_num_vars <- auto_df_clean[, !sapply(auto_df_clean, is.numeric)]
+scaled_data <- cbind(non_num_vars, scaled_vars)
+
+
+# Plot boxplots of all numerical variables in the dataset
+boxplot(scaled_data[, sapply(scaled_data, is.numeric)], 
+        main = "Boxplot of Numerical Variables in Automobile Dataset",
+        xlab = "Variables",
+        ylab = "Values")
+
+```
+**Analysis of categorical variables**
+
+We can see that the variables:- Fuel.type and engine.location has one value after outlier removal. Hence we can remove these features.
+
+```{r}
+
+# Select only the categorical variables in the dataset
+cat_vars <- auto_df_clean[, sapply(auto_df_clean, is.factor)]
+
+cat_vars <- subset(cat_vars, select = -c(fuel.type, engine.location))
+# Create a list of barcharts
+library(ggplot2)
+library(gridExtra)
+plots_list <- lapply(names(cat_vars), function(col) {
+  ggplot(data = data.frame(x = cat_vars[[col]])) +
+    geom_bar(aes(x, fill = x), show.legend = FALSE) +
+    ggtitle(col) +
+    xlab("Category") +
+    ylab("Count") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+})
+
+# Arrange the barcharts in a single frame
+grid.arrange(grobs = plots_list, nrow = 3, ncol = 3)
+
+```
+
+
+*From the above plot, we can see that majority of the observations have 4 cylinders, is front wheel drive and of engine type "OHC". There are very few observations with turbo*
+
+We also inspect the relationship between the categorical variable and outcome variable.
+```{r}
+library(gridExtra)
+library(grid)
+plots_list <- lapply(names(cat_vars), function(col) {
+ ggplot(auto_df_clean, aes(x = factor(cat_vars[[col]]), y = price)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "steelblue") + ggtitle(col) + 
+  xlab("vs") +
+  ylab("Price") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+})
+
+# Arrange the barcharts in a single frame
+grid.arrange(grobs = plots_list, nrow = 3, ncol = 3, top=textGrob("Barplot of categorical variables vs Price"))
+
+
+
+```
+
+**Convert necessary categorical variables to numeric**
+
+```{r}
+
+auto_df_clean$drive.wheels_num <- as.numeric(factor(auto_df_clean$drive.wheels, levels = c("4wd", "fwd", "rwd")))
+
+auto_df_clean$engine.type_num <- as.numeric(factor(auto_df_clean$engine.type, levels = c("dohc", "l", "ohc", "ohcv")))
+
+
+auto_df_clean$body_style_num <- as.numeric(factor(auto_df_clean$body.style, levels = c("convertible", "hardtop", "hatchback", "sedan", "wagon")))
+
+
+auto_df_clean$num.of.cylinders_num <- as.numeric(factor(auto_df_clean$num.of.cylinders, levels = c("five", "four", "six")))
+
+auto_df_clean$asipration_num <- as.numeric(factor(auto_df_clean$aspiration, levels = c("std", "turbo")))
+
+auto_df_clean$num.of.doors_num <- as.numeric(factor(auto_df_clean$num.of.doors, levels = c("four", "two")))
+
+auto_df_clean$make_num <- as.numeric(factor(auto_df_clean$make, levels = c("alfa-romero",  "audi" , "bmw", "chevrolet", "dodge" ,"honda", "isuzu","jaguar","mazda" , "mercedes-benz", "mercury", "mitsubishi",  "nissan", "peugot", "plymouth", "porsche","renault"," saab","subaru", "toyota","volkswagen",  "volvo")))
+
+auto_df_clean$fuel.system_num <- as.numeric(factor(auto_df_clean$fuel.system, levels = c("1bbl", "2bbl", "mpfi", "spdi", "spfi" )))
+
+auto_df_clean <- subset(auto_df_clean, select = -c(fuel.type, engine.location, num.of.cylinders, body.style, drive.wheels, aspiration, num.of.doors, make, fuel.system,engine.type,make_num))
+```
+
+
+Since we are considering the price as our target variable, we check it's distribution. From the plot, it is quite evident that the distribution is right skewed.
+
+```{r}
+hist(auto_df_clean$price, main = "Distribution of target variable - Price", xlab = "Price")
+```
+
+**Model Building**
+
+*Stepwise regression model*
+
+```{r}
+library(MASS)
+# Split the data into training and testing sets
+library(caret)
+set.seed(123)
+
+trainIndex <- createDataPartition(auto_df_clean$price, p=0.8, list=FALSE)
+auto_train <- auto_df_clean[trainIndex,]
+auto_test <- auto_df_clean[-trainIndex,]
+
+fullModel = lm(price ~ ., data = auto_train) 
+nullModel = lm(price ~ 1, data = auto_train) 
+summary(stepAIC(fullModel, 
+                direction = 'both', # run forward and backward selection
+                scope = list(upper = fullModel,
+                             lower = nullModel),
+                trace = 0))
+
+```
+
+*Ridge regression model*
+
+```{r}
+
+set.seed(123) 
+training.samples <- auto_df_clean$price %>%
+  createDataPartition(p = 0.8, list = FALSE)
+
+train.data  <- auto_df_clean[training.samples, ]
+test.data <- auto_df_clean[-training.samples, ]
+# Predictor variables
+x <- model.matrix(price~., train.data)[,-1]
+# Outcome variable
+y <- train.data$price
+
+lambda <- 10^seq(-3, 3, length = 100)
+
+
+# Build the model
+set.seed(123)
+ridge <- train(
+  price ~., data = train.data, method = "glmnet",
+  trControl = trainControl("cv", number = 10),
+  tuneGrid = expand.grid(alpha = 0, lambda = lambda)
+  )
+
+
+# Model coefficients
+coef(ridge$finalModel, ridge$bestTune$lambda)
+```
+
+```{r}
+# Predictions
+predictions <- ridge %>% predict(test.data)
+
+#Evaluation parameters
+data.frame(
+  RMSE = RMSE(predictions, test.data$price),
+  Rsquare = R2(predictions, test.data$price)
+)
+
+```
+
+*LASSO regression model*
+
+```{r}
+# Build the model
+set.seed(123)
+lasso <- train(
+  price ~., data = train.data, method = "glmnet",
+  trControl = trainControl("cv", number = 10),
+  tuneGrid = expand.grid(alpha = 1, lambda = lambda)
+  )
+
+# Model coefficients
+coef(lasso$finalModel, lasso$bestTune$lambda)
+```
+
+```{r}
+# Make predictions
+predictions <- lasso %>% predict(test.data)
+# Model prediction performance
+data.frame(
+  RMSE = RMSE(predictions, test.data$price),
+  Rsquare = R2(predictions, test.data$price)
+)
+
+```
+
+*Elastic regression model*
+
+```{r}
+
+# Build the model
+set.seed(123)
+elastic <- train(
+  price ~., data = train.data, method = "glmnet",
+  trControl = trainControl("cv", number = 10),
+  tuneLength = 10
+  )
+# Model coefficients
+coef(elastic$finalModel, elastic$bestTune$lambda)
+
+```
+
+```{r}
+# Make predictions
+predictions <- elastic %>% predict(test.data)
+# Model prediction performance
+data.frame(
+  RMSE = RMSE(predictions, test.data$price),
+  Rsquare = R2(predictions, test.data$price)
+)
+
+```
+
