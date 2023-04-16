@@ -1,6 +1,8 @@
 # DASC_5420_final_project
 This constitutes the final project for DASC_5420 (Theoretical Machine Learning). It involves the use of automobile.csv for predicting the fuel efficiency of cars.
 
+Dataset link : https://archive.ics.uci.edu/ml/datasets/automobile
+
 >Abstract
 
 Cars are almost a necessity in the current world. With cutthroat completion, it is imperative that a car be well priced for it to be successful in the market. This study analyzes the characteristics of cars with price in context and identifies major factors that constitute the price of a car. It also uses these identified factors to predict car prices. It makes use of the characteristic’s engine size, horsepower, drive train which can be measured easily before the vehicle goes on sale. It does an exhaustive comparison of regression techniques namely – Stepwise regression, Ridge regression, LASSO Regression and Elastic Net regression to predict car prices. The performance metric RMSE and R-squared vales are used to determine which model performs better. This study can be used has a guide for car manufactures to price their cars based on the car’s characteristics. This can in turn help them to position themselves better in the market and edge out competition.
