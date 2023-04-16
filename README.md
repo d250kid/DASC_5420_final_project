@@ -7,7 +7,7 @@ Cars are almost a necessity in the current world. With cutthroat completion, it 
 
 
 
-#Introduction
+##Introduction
 
 Car prices are a crucial factor in determining the success of a car. Although the buying decision relies on a host of factors, price is the deciding factor most of the time. With the introduction of data science in business sectors, companies look towards techniques to improve their revenue using the data that is readily available to them. This is where this study comes into play. All the variables in the dataset are information that the company has before the car goes on sale. While controlling the other factors, manufactures can play with the price of the car and see how much margin they can afford for each unit sale.
 
